@@ -133,10 +133,12 @@ func (ri *responseInfo) setResponseInfo(status string, statusCode int) {
 	ri.StatusCode = statusCode
 }
 
+type customProperties interface{}
+
 type ResourcePatch struct {
 	// User Attribute Resource
 	// Structure fields must have a `json` tag
-	CustomProperties interface{} `json:"custom_properties"`
+	CustomProperties customProperties `json:"custom_properties"`
 }
 
 type Error struct {
@@ -237,8 +239,8 @@ type ResourceUploadLink struct {
 
 type Resource struct {
 	baseResource
-	CustomProperties string   `json:"custom_properties"`
-	Embedded         Embedded `json:"_embedded"`
+	CustomProperties customProperties `json:"custom_properties"`
+	Embedded         Embedded         `json:"_embedded"`
 }
 
 type FilesResourceList struct {
@@ -268,10 +270,10 @@ type PublicResource struct {
 
 type TrashResource struct {
 	baseResource
-	Embedded         TrashEmbedded `json:"_embedded"`
-	CustomProperties string        `json:"custom_properties"`
-	OriginPath       string        `json:"origin_path"`
-	Deleted          string        `json:"deleted"`
+	Embedded         TrashEmbedded    `json:"_embedded"`
+	CustomProperties customProperties `json:"custom_properties"`
+	OriginPath       string           `json:"origin_path"`
+	Deleted          string           `json:"deleted"`
 }
 
 type OperationStatus struct {
