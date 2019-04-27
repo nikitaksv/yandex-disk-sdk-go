@@ -1,7 +1,7 @@
 package yadisk
 
 import (
-	"fmt"
+	"bytes"
 	"strconv"
 	"strings"
 )
@@ -112,6 +112,10 @@ type YaDisk interface {
 
 	// Get the status of an asynchronous operation.
 	GetOperationStatus(operationID string, fields []string) (s *OperationStatus, e error)
+
+	// Custom upload
+	PerformUpload(ur *ResourceUploadLink, data *bytes.Buffer) (pu *PerformUpload, e error)
+	PerformPartialUpload(ur *ResourceUploadLink, data *bytes.Buffer, portions int, concurrencyLimit int) (pu *PerformUpload, e error)
 }
 
 type yandexDisk struct {
@@ -161,14 +165,8 @@ func (pu *PerformUpload) handleError(ri responseInfo) (e error) {
 	case "201 created",
 		"202 accepted":
 		return nil
-	case "412 precondition failed",
-		"413 payload too large",
-		"500 internal server error",
-		"503 service unavailable",
-		"507 insufficient storage":
-		return
 	default:
-		panic(fmt.Sprintf("undefined status: %s", ri.Status))
+		return
 	}
 }
 

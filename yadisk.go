@@ -4,10 +4,11 @@ import (
 	"bytes"
 	"context"
 	"errors"
-	"io"
+	"fmt"
 	"net/http"
 	"net/url"
 	"strings"
+	"time"
 )
 
 const (
@@ -44,7 +45,7 @@ func (yad *yandexDisk) GetDisk(fields []string) (d *Disk, e error) {
 }
 
 //This custom method to download data by link.
-func (yad *yandexDisk) PerformUpload(ur *ResourceUploadLink, data io.Reader) (pu *PerformUpload, e error) {
+func (yad *yandexDisk) PerformUpload(ur *ResourceUploadLink, data *bytes.Buffer) (pu *PerformUpload, e error) {
 	req, e := http.NewRequest(ur.Method, ur.Href, data)
 	if e != nil {
 		return
@@ -59,20 +60,31 @@ func (yad *yandexDisk) PerformUpload(ur *ResourceUploadLink, data io.Reader) (pu
 	if e != nil {
 		return nil, e
 	}
-	return nil, nil
+	return pu, nil
+}
+
+type result struct {
+	out *PerformUpload
+	err error
 }
 
 //This custom method to download data by link.
 //
 // portions - the number of portions to upload the file. data len / portions
-func (yad *yandexDisk) PerformPartialUpload(ur *ResourceUploadLink, data bytes.Buffer, portions int) (pu *PerformUpload, e error) {
-
+func (yad *yandexDisk) PerformPartialUpload(ur *ResourceUploadLink, data *bytes.Buffer, portions int, concurrencyLimit int) (pu *PerformUpload, e error) {
+	if concurrencyLimit > portions {
+		return nil, fmt.Errorf("error concurrencyLimit > portions")
+	}
 	contentLength := int64(data.Len())
-	channels := make(chan int, portions)
-	out := make(chan *PerformUpload, portions)
-	errs := make(chan error, portions)
+
+	semaphoreChan := make(chan int, concurrencyLimit)
+	resultsChan := make(chan *result, portions)
+	defer func() {
+		close(semaphoreChan)
+		close(resultsChan)
+	}()
+
 	portion := func(req *http.Request) (pu *PerformUpload, e error) {
-		channels <- 1
 		pu = new(PerformUpload)
 		ri, e := yad.client.getResponse(req, &pu)
 		if e != nil {
@@ -82,23 +94,41 @@ func (yad *yandexDisk) PerformPartialUpload(ur *ResourceUploadLink, data bytes.B
 		if e != nil {
 			return nil, e
 		}
-		return nil, nil
+		return pu, nil
 	}
 
-	reqs, err := requestWithRange(ur, data.Bytes(), portions, contentLength)
-	if err != nil {
-		return nil, err
+	reqs, e := requestWithRange(ur, data.Bytes(), portions, contentLength)
+	if e != nil {
+		return nil, e
 	}
 	for _, req := range reqs {
+		// timeout to protect against 500 error
+		time.Sleep(200 * time.Millisecond)
 		go func(r *http.Request) {
+			semaphoreChan <- 1
 			pu, err := portion(r)
-			out <- pu
-			errs <- err
+			res := &result{pu, err}
+			resultsChan <- res
+			<-semaphoreChan
 		}(req)
 	}
-	close(channels)
+	var results []result
+	for {
+		result := <-resultsChan
+		results = append(results, *result)
+		if len(results) == portions {
+			break
+		}
+	}
+	for _, res := range results {
+		if res.err != nil {
+			return nil, res.err
+		}
+		if res.out == nil {
+			return nil, fmt.Errorf("error permofrm upload")
+		}
+	}
 
-	// TODO: Add wait channel logic
-
-	return nil, err
+	pu = &PerformUpload{}
+	return pu, nil
 }

@@ -1,8 +1,12 @@
 package yadisk
 
 import (
+	"bufio"
+	"bytes"
 	"context"
 	"io"
+	"log"
+	"math/rand"
 	"net/http"
 	"os"
 	"reflect"
@@ -11,7 +15,7 @@ import (
 
 var (
 	// TestData
-	// testUploadFilePath = "testdata/upload.txt"
+	testUploadFilePath = "testdata/upload.txt"
 	// Token
 	testValidToken = Token{
 		AccessToken: os.Getenv("YANDEX_TOKEN"),
@@ -31,6 +35,8 @@ var (
 	testYaDisk, _                 = NewYaDisk(context.Background(), nil, &testValidToken)
 	testYaDiskWithInvalidToken, _ = NewYaDisk(context.Background(), nil, &testInvalidToken)
 )
+
+const letterBytes = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789"
 
 func TestNewYaDisk(t *testing.T) {
 	type args struct {
@@ -90,37 +96,110 @@ func Test_yandexDisk_GetDisk(t *testing.T) {
 }
 
 func Test_yandexDisk_PerformUpload(t *testing.T) {
-	type fields struct {
-		Token  *Token
-		client *client
+	link, err := testYaDisk.GetResourceUploadLink("/test.txt", nil, true)
+	if err != nil {
+		t.Errorf("yandexDisk.GetResourceUploadLink() error = %v", err)
 	}
-	type args struct {
-		ur   *ResourceUploadLink
-		data io.Reader
+	pu, err := testYaDisk.PerformUpload(link, openFile(testUploadFilePath))
+	if err != nil {
+		t.Errorf("testYaDisk.PerformPartialUpload() return error = %v", err)
 	}
-	tests := []struct {
-		name    string
-		fields  fields
-		args    args
-		wantPu  *PerformUpload
-		wantErr bool
-	}{
-		// TODO: Add test cases.
+
+	if pu == nil {
+		t.Errorf("testYaDisk.PerformPartialUpload() return nil PerformUpload = %v", err)
 	}
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			yad := &yandexDisk{
-				Token:  tt.fields.Token,
-				client: tt.fields.client,
-			}
-			gotPu, err := yad.PerformUpload(tt.args.ur, tt.args.data)
-			if (err != nil) != tt.wantErr {
-				t.Errorf("yandexDisk.PerformUpload() error = %v, wantErr %v", err, tt.wantErr)
-				return
-			}
-			if !reflect.DeepEqual(gotPu, tt.wantPu) {
-				t.Errorf("yandexDisk.PerformUpload() = %v, want %v", gotPu, tt.wantPu)
-			}
-		})
+
+	status, err := testYaDisk.GetOperationStatus(link.OperationID, nil)
+	if err != nil {
+		t.Errorf("testYaDisk.GetOperationStatus() return error = %v", err)
 	}
+	if status.Status != "success" {
+		t.Errorf("testYaDisk.GetOperationStatus() return error = %v", err)
+	}
+}
+
+func Test_yandexDisk_PerformPartialUpload(t *testing.T) {
+
+	fileName := testUploadFilePath
+	link, err := testYaDisk.GetResourceUploadLink("/test.txt", nil, true)
+	if err != nil {
+		t.Errorf("yandexDisk.GetResourceUploadLink() error = %v", err)
+	}
+	pu, err := testYaDisk.PerformPartialUpload(link, openFile(fileName), 2, 2)
+	if err != nil {
+		t.Errorf("testYaDisk.PerformPartialUpload() return error = %v", err)
+	}
+
+	if pu == nil {
+		t.Errorf("testYaDisk.PerformPartialUpload() return nil PerformUpload")
+	}
+
+	status, err := testYaDisk.GetOperationStatus(link.OperationID, nil)
+	if err != nil {
+		t.Errorf("testYaDisk.GetOperationStatus() return error = %v", err)
+	}
+	if status.Status != "success" {
+		t.Errorf("testYaDisk.GetOperationStatus() return bad status = %v", status.Status)
+	}
+}
+
+func createFile(name string, size int) {
+	f, err := os.Create(name)
+	if err != nil {
+		panic(err)
+	}
+	defer func() {
+		err := f.Close()
+		if err != nil {
+			panic(err)
+		}
+	}()
+	_, err = f.WriteString(randStringBytes(size))
+	if err != nil {
+		panic(err)
+	}
+}
+
+func removeFile(name string) {
+	err := os.Remove(name)
+	if err != nil {
+		panic(err)
+	}
+}
+
+func randStringBytes(n int) string {
+	b := make([]byte, n)
+	for i := range b {
+		b[i] = letterBytes[rand.Intn(len(letterBytes))]
+	}
+	return string(b)
+}
+
+func openFile(name string) (buffer *bytes.Buffer) {
+	data, err := os.Open(name)
+	if err != nil {
+		log.Fatal(err)
+	}
+	defer func() {
+		err := data.Close()
+		if err != nil {
+			panic(err)
+		}
+	}()
+	reader := bufio.NewReader(data)
+	buffer = bytes.NewBuffer(make([]byte, 0))
+	part := make([]byte, 1024)
+	for {
+		var count int
+		if count, err = reader.Read(part); err != nil {
+			break
+		}
+		buffer.Write(part[:count])
+	}
+	if err != io.EOF {
+		log.Fatal("Error Reading ", name, ": ", err)
+	} else {
+		err = nil
+	}
+	return
 }
