@@ -1,6 +1,7 @@
 package yadisk
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"io"
@@ -59,4 +60,45 @@ func (yad *yandexDisk) PerformUpload(ur *ResourceUploadLink, data io.Reader) (pu
 		return nil, e
 	}
 	return nil, nil
+}
+
+//This custom method to download data by link.
+//
+// portions - the number of portions to upload the file. data len / portions
+func (yad *yandexDisk) PerformPartialUpload(ur *ResourceUploadLink, data bytes.Buffer, portions int) (pu *PerformUpload, e error) {
+
+	contentLength := int64(data.Len())
+	channels := make(chan int, portions)
+	out := make(chan *PerformUpload, portions)
+	errs := make(chan error, portions)
+	portion := func(req *http.Request) (pu *PerformUpload, e error) {
+		channels <- 1
+		pu = new(PerformUpload)
+		ri, e := yad.client.getResponse(req, &pu)
+		if e != nil {
+			return nil, e
+		}
+		e = pu.handleError(*ri)
+		if e != nil {
+			return nil, e
+		}
+		return nil, nil
+	}
+
+	reqs, err := requestWithRange(ur, data.Bytes(), portions, contentLength)
+	if err != nil {
+		return nil, err
+	}
+	for _, req := range reqs {
+		go func(r *http.Request) {
+			pu, err := portion(r)
+			out <- pu
+			errs <- err
+		}(req)
+	}
+	close(channels)
+
+	// TODO: Add wait channel logic
+
+	return nil, err
 }

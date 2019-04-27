@@ -1,6 +1,7 @@
 package yadisk
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -108,4 +109,32 @@ func bodyClose(closer io.Closer) {
 	if e != nil {
 		panic(e.Error())
 	}
+}
+
+func getRange(start, end, total int64) string {
+	return fmt.Sprintf("bytes %d-%d/%d", start, end, total)
+}
+
+func requestWithRange(ur *ResourceUploadLink, data []byte, portions int, contentLength int64) ([]*http.Request, error) {
+	portionSize := contentLength / int64(portions)
+	startSize := int64(0)
+	reqs := make([]*http.Request, portions)
+	for i := 1; i <= portions; i++ {
+		var dataSize []byte
+		if i == portions {
+			portionSize = contentLength
+			dataSize = data[startSize:contentLength]
+		} else {
+			dataSize = data[startSize:portionSize]
+		}
+		req, e := http.NewRequest(ur.Method, ur.Href, bytes.NewReader(dataSize))
+		if e != nil {
+			return nil, e
+		}
+		req.Header.Set("Content-Range", getRange(startSize, portionSize, contentLength))
+		reqs = append(reqs, req)
+		startSize += portionSize
+		portionSize += portionSize
+	}
+	return reqs, nil
 }
