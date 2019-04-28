@@ -14,8 +14,6 @@ import (
 )
 
 var (
-	// TestData
-	testUploadFilePath = "testdata/upload.txt"
 	// Token
 	testValidToken = Token{
 		AccessToken: os.Getenv("YANDEX_TOKEN"),
@@ -23,14 +21,6 @@ var (
 	testInvalidToken = Token{
 		AccessToken: "AQA0AA00qEYz00WXA7olo",
 	}
-	// Error
-	//testUnAuthError = Error{
-	//	Message:     "Не авторизован.",
-	//	Description: "Unauthorized",
-	//	ErrorID:     "UnauthorizedError",
-	//}
-	// Struct
-
 	// Disk
 	testYaDisk, _                 = NewYaDisk(context.Background(), nil, &testValidToken)
 	testYaDiskWithInvalidToken, _ = NewYaDisk(context.Background(), nil, &testInvalidToken)
@@ -96,11 +86,14 @@ func Test_yandexDisk_GetDisk(t *testing.T) {
 }
 
 func Test_yandexDisk_PerformUpload(t *testing.T) {
-	link, err := testYaDisk.GetResourceUploadLink("/test.txt", nil, true)
+	fileName := randStringBytes(10)
+	createFile(fileName, rand.Intn(100)*1e4)
+	defer removeFile(fileName)
+	link, err := testYaDisk.GetResourceUploadLink("/test/"+fileName, nil, true)
 	if err != nil {
 		t.Errorf("yandexDisk.GetResourceUploadLink() error = %v", err)
 	}
-	pu, err := testYaDisk.PerformUpload(link, openFile(testUploadFilePath))
+	pu, err := testYaDisk.PerformUpload(link, openFile(fileName))
 	if err != nil {
 		t.Errorf("testYaDisk.PerformPartialUpload() return error = %v", err)
 	}
@@ -119,15 +112,16 @@ func Test_yandexDisk_PerformUpload(t *testing.T) {
 }
 
 func Test_yandexDisk_PerformPartialUpload(t *testing.T) {
-
-	fileName := testUploadFilePath
-	link, err := testYaDisk.GetResourceUploadLink("/test.txt", nil, true)
+	fileName := randStringBytes(10) + "_partial"
+	createFile(fileName, rand.Intn(100)*1e4)
+	defer removeFile(fileName)
+	link, err := testYaDisk.GetResourceUploadLink("/test/"+fileName, nil, true)
 	if err != nil {
-		t.Errorf("yandexDisk.GetResourceUploadLink() error = %v", err)
+		t.Errorf("yandexDisk.GetResourceUploadLink() error = %v", err.Error())
 	}
-	pu, err := testYaDisk.PerformPartialUpload(link, openFile(fileName), 2, 2)
+	pu, err := testYaDisk.PerformPartialUpload(link, openFile(fileName), rand.Int63n(100)*1e3)
 	if err != nil {
-		t.Errorf("testYaDisk.PerformPartialUpload() return error = %v", err)
+		t.Errorf("testYaDisk.PerformPartialUpload() return error = %v", err.Error())
 	}
 
 	if pu == nil {
@@ -136,7 +130,7 @@ func Test_yandexDisk_PerformPartialUpload(t *testing.T) {
 
 	status, err := testYaDisk.GetOperationStatus(link.OperationID, nil)
 	if err != nil {
-		t.Errorf("testYaDisk.GetOperationStatus() return error = %v", err)
+		t.Errorf("testYaDisk.GetOperationStatus() return error = %v", err.Error())
 	}
 	if status.Status != "success" {
 		t.Errorf("testYaDisk.GetOperationStatus() return bad status = %v", status.Status)

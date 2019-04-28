@@ -114,8 +114,21 @@ type YaDisk interface {
 	GetOperationStatus(operationID string, fields []string) (s *OperationStatus, e error)
 
 	// Custom upload
+
+	// This custom method to upload data by link.
 	PerformUpload(ur *ResourceUploadLink, data *bytes.Buffer) (pu *PerformUpload, e error)
-	PerformPartialUpload(ur *ResourceUploadLink, data *bytes.Buffer, portions int, concurrencyLimit int) (pu *PerformUpload, e error)
+
+	// This custom method to upload data by link.
+	//
+	// portions - the number of portions to upload the file. data len / portions
+	//
+	// partSize - if partSize > 1e10 then partsSize = 1e10 (upload file max size = 1e10)
+	PerformPartialUpload(ur *ResourceUploadLink, data *bytes.Buffer, partSize int64) (pu *PerformUpload, e error)
+}
+
+type performPartialUploadResult struct {
+	out *PerformUpload
+	err error
 }
 
 type yandexDisk struct {

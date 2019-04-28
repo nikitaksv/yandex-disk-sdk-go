@@ -5,14 +5,16 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"log"
 	"net/http"
 	"net/url"
 	"strings"
-	"time"
+	"sync"
 )
 
 const (
-	BaseURL string = "https://cloud-api.yandex.net"
+	BaseURL           string = "https://cloud-api.yandex.net"
+	MaxFileUploadSize int64  = 1e10
 )
 
 func NewYaDisk(ctx context.Context, client *http.Client, token *Token) (YaDisk, error) {
@@ -44,75 +46,50 @@ func (yad *yandexDisk) GetDisk(fields []string) (d *Disk, e error) {
 	return
 }
 
-//This custom method to download data by link.
+// This custom method to upload data by link.
 func (yad *yandexDisk) PerformUpload(ur *ResourceUploadLink, data *bytes.Buffer) (pu *PerformUpload, e error) {
 	req, e := http.NewRequest(ur.Method, ur.Href, data)
 	if e != nil {
 		return
 	}
-
-	pu = new(PerformUpload)
-	ri, e := yad.client.getResponse(req, &pu)
-	if e != nil {
-		return nil, e
-	}
-	e = pu.handleError(*ri)
-	if e != nil {
-		return nil, e
-	}
-	return pu, nil
+	return yad.performUpload(req)
 }
 
-type result struct {
-	out *PerformUpload
-	err error
-}
-
-//This custom method to download data by link.
+// This custom method to upload data by link.
 //
 // portions - the number of portions to upload the file. data len / portions
-func (yad *yandexDisk) PerformPartialUpload(ur *ResourceUploadLink, data *bytes.Buffer, portions int, concurrencyLimit int) (pu *PerformUpload, e error) {
-	if concurrencyLimit > portions {
-		return nil, fmt.Errorf("error concurrencyLimit > portions")
-	}
+//
+// partSize - if partSize > 1e10 then partsSize = 1e10 (upload file max size = 1e10)
+func (yad *yandexDisk) PerformPartialUpload(ur *ResourceUploadLink, data *bytes.Buffer, partSize int64) (pu *PerformUpload, e error) {
 	contentLength := int64(data.Len())
-
-	semaphoreChan := make(chan int, concurrencyLimit)
-	resultsChan := make(chan *result, portions)
-	defer func() {
-		close(semaphoreChan)
-		close(resultsChan)
-	}()
-
-	portion := func(req *http.Request) (pu *PerformUpload, e error) {
-		pu = new(PerformUpload)
-		ri, e := yad.client.getResponse(req, &pu)
-		if e != nil {
-			return nil, e
-		}
-		e = pu.handleError(*ri)
-		if e != nil {
-			return nil, e
-		}
-		return pu, nil
+	var wg sync.WaitGroup
+	if partSize > contentLength {
+		return nil, fmt.Errorf("partSize can not be more than data.Len()")
 	}
+	if partSize > MaxFileUploadSize {
+		log.Printf("partSize %v > MaxFileUploadSize %v. change value partSize on %v", partSize, MaxFileUploadSize, MaxFileUploadSize)
+		partSize = MaxFileUploadSize
+	}
+	portions := int(contentLength / partSize)
+	resultsChan := make(chan *performPartialUploadResult, portions)
+	defer close(resultsChan)
 
-	reqs, e := requestWithRange(ur, data.Bytes(), portions, contentLength)
+	reqs, e := requestWithRange(ur, data.Bytes(), partSize, contentLength, portions)
 	if e != nil {
 		return nil, e
 	}
+
 	for _, req := range reqs {
-		// timeout to protect against 500 error
-		time.Sleep(200 * time.Millisecond)
+		wg.Add(1)
 		go func(r *http.Request) {
-			semaphoreChan <- 1
-			pu, err := portion(r)
-			res := &result{pu, err}
+			defer wg.Done()
+			pu, err := yad.performUpload(r)
+			res := &performPartialUploadResult{pu, err}
 			resultsChan <- res
-			<-semaphoreChan
 		}(req)
+		wg.Wait()
 	}
-	var results []result
+	var results []performPartialUploadResult
 	for {
 		result := <-resultsChan
 		results = append(results, *result)
@@ -130,5 +107,18 @@ func (yad *yandexDisk) PerformPartialUpload(ur *ResourceUploadLink, data *bytes.
 	}
 
 	pu = &PerformUpload{}
+	return pu, nil
+}
+
+func (yad *yandexDisk) performUpload(req *http.Request) (pu *PerformUpload, e error) {
+	pu = new(PerformUpload)
+	ri, e := yad.client.getResponse(req, &pu)
+	if e != nil {
+		return nil, e
+	}
+	e = pu.handleError(*ri)
+	if e != nil {
+		return nil, e
+	}
 	return pu, nil
 }

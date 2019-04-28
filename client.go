@@ -115,9 +115,8 @@ func getRange(start, end, total int64) string {
 	return fmt.Sprintf("bytes %d-%d/%d", start, end, total)
 }
 
-func requestWithRange(ur *ResourceUploadLink, data []byte, portions int, contentLength int64) ([]*http.Request, error) {
-	part := contentLength / int64(portions)
-	portionSize := part
+func requestWithRange(ur *ResourceUploadLink, data []byte, partSize, contentLength int64, portions int) ([]*http.Request, error) {
+	portionSize := partSize
 	startSize := int64(0)
 	reqs := make([]*http.Request, portions)
 	for i := 0; i < portions; i++ {
@@ -125,7 +124,6 @@ func requestWithRange(ur *ResourceUploadLink, data []byte, portions int, content
 		if i == portions-1 {
 			portionSize = contentLength
 			dataSize = data[startSize:contentLength]
-			portionSize--
 		} else {
 			dataSize = data[startSize:portionSize]
 		}
@@ -133,10 +131,10 @@ func requestWithRange(ur *ResourceUploadLink, data []byte, portions int, content
 		if e != nil {
 			return nil, e
 		}
-		req.Header.Set("Content-Range", getRange(startSize, portionSize, contentLength))
+		req.Header.Set("Content-Range", getRange(startSize, portionSize-1, contentLength))
 		reqs[i] = req
 		startSize = portionSize
-		portionSize += part
+		portionSize += partSize
 	}
 	return reqs, nil
 }
