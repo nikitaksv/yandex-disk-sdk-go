@@ -272,7 +272,7 @@ func (yad *yandexDisk) pubResource(publishUnpublish string, path string, fields 
 
 // Upload file to Disk by URL.
 //
-// Download asynchronously.
+// Upload asynchronously.
 //
 // Therefore, in response to the request, a reference to the asynchronous operation is returned.
 func (yad *yandexDisk) UploadExternalResource(path string, externalURL string, disableRedirects bool, fields []string) (l *Link, e error) {
@@ -295,7 +295,7 @@ func (yad *yandexDisk) UploadExternalResource(path string, externalURL string, d
 	return
 }
 
-// Get file download link.
+// Get file upload link.
 func (yad *yandexDisk) GetResourceUploadLink(path string, fields []string, overwrite bool) (l *ResourceUploadLink, e error) {
 	values := url.Values{}
 	values.Add("path", path)
