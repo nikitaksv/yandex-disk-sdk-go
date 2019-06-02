@@ -58,14 +58,3 @@ if err != nil {
     // e.Message
 }
 ```
-
----
-
-<p align="center">
-    <b>If the Yandex.Disk SDK helped you, consider donating to the author of this project, Nikita Krasnikov, to show your support. Thanks you!</b>
-</p>
-<p align="center">
-    <a href="https://www.patreon.com/bePatron?u=19197324" data-patreon-widget-type="become-patron-button">
-        <img src="https://c5.patreon.com/external/logo/become_a_patron_button@2x.png" width="160" title="Become a Patron!">
-    </a>
-</p>
